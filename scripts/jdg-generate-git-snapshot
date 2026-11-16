@@ -10,6 +10,19 @@ if [ -r /etc/jenkins/debian_glue ] ; then
   . /etc/jenkins/debian_glue
 fi
 
+# vendor-qualified distributions (VENDOR_DISTRIBUTIONS=true)
+. "${JDG_LIBDIR:-/usr/share/jenkins-debian-glue/lib}/vendor-dist.sh"
+if jdg_vendor_enabled && [ -n "${distribution:-}" ] ; then
+  if ! jdg_vendor_split "${distribution}" ; then
+    echo "Error: distribution '${distribution}' is not vendor-qualified (expected <vendor>-<codename>, vendors: ${JDG_VENDORS})." >&2
+    exit 1
+  fi
+  # the changelog/changes Distribution is the plain codename of the vendor archive
+  if [ -n "${DIST:-}" ] ; then
+    DIST="$(jdg_vendor_codename "${DIST}")"
+  fi
+fi
+
 [ -n "${DEBEMAIL:-}" ] || DEBEMAIL="jenkins-debian-glue Autobuilder <jenkins@`hostname -f`>"
 export DEBEMAIL
 

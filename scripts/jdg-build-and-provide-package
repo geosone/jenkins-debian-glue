@@ -30,6 +30,9 @@ if [ -n "${HOST_ARCH:-}" ] ; then
   echo "*** Identified host architecture ${HOST_ARCH} ***"
 fi
 
+# vendor-qualified distributions (VENDOR_DISTRIBUTIONS=true)
+. "${JDG_LIBDIR:-/usr/share/jenkins-debian-glue/lib}/vendor-dist.sh"
+
 set_debootstrap() {
   if [ -n "${DEBOOTSTRAP:-}" ] ; then
     echo "*** Using provided ${DEBOOTSTRAP} as DEBOOTSTRAP ***"
@@ -65,6 +68,40 @@ set_debootstrap() {
   else
     echo "Error: qemu-debootstrap not available, please install qemu-user-static." >&2
     exit 1
+  fi
+}
+
+vendor_distribution_settings() {
+  # see lib/vendor-dist.sh; $1 = true if REPOSITORY was not set explicitly
+  jdg_vendor_enabled || return 0
+
+  if [ -z "${distribution:-}" ] ; then
+    bailout 1 "Error: VENDOR_DISTRIBUTIONS is enabled but no distribution is set."
+  fi
+  if ! jdg_vendor_split "${distribution}" ; then
+    bailout 1 "Error: distribution '${distribution}' is not vendor-qualified (expected <vendor>-<codename>, vendors: ${JDG_VENDORS})."
+  fi
+  echo "*** Vendor-qualified distribution: vendor ${DIST_VENDOR}, codename ${DIST_CODENAME} ***"
+
+  # one reprepro archive per vendor
+  if ${1:-true} ; then
+    REPOSITORY="${DEFAULT_REPOSITORY}/${DIST_VENDOR}"
+    echo "*** Using vendor archive ${REPOSITORY} ***"
+  fi
+  # jdg-generate-reprepro-codename runs as a separate process
+  export REPOSITORY
+
+  # the vendor decides which architecture builds Arch:all packages
+  local vendor_main
+  vendor_main="$(jdg_vendor_main_arch "${DIST_VENDOR}")"
+  if [ -n "${MAIN_ARCHITECTURE:-}" ] && [ "${MAIN_ARCHITECTURE}" != "${vendor_main}" ] ; then
+    echo "*** WARNING: MAIN_ARCHITECTURE=${MAIN_ARCHITECTURE} ignored, ${DIST_VENDOR} uses ${vendor_main} (set MAIN_ARCHITECTURE_${DIST_VENDOR} to change it) ***"
+  fi
+  MAIN_ARCHITECTURE="${vendor_main}"
+
+  # suites inside a vendor archive use plain codenames
+  if [ -n "${TRUNK_RELEASE:-}" ] ; then
+    TRUNK_RELEASE="$(jdg_vendor_codename "${TRUNK_RELEASE}")"
   fi
 }
 
@@ -121,7 +158,12 @@ checks_and_defaults() {
   # REPOSITORY can overwrite DEFAULT_REPOSITORY, so define only if unset
   if [ -z "${REPOSITORY:-}" ] ; then
     REPOSITORY="${DEFAULT_REPOSITORY}"
+    local repository_is_default=true
+  else
+    local repository_is_default=false
   fi
+
+  vendor_distribution_settings "${repository_is_default}"
 
   if [ -z "${PBUILDER_HOOKDIR:-}" ] ; then
     PBUILDER_HOOKDIR='/usr/share/jenkins-debian-glue/pbuilder-hookdir/'
@@ -226,6 +268,10 @@ build_info() {
 
     if [ -z "${distribution:-}" ]; then
       echo "*** No repository supplied, using repository name $REPOS ***"
+    elif jdg_vendor_enabled ; then
+      # the vendor archive already says which vendor; suite = <package>-<codename>
+      REPOS="${REPOS}-${DIST_CODENAME}"
+      echo "*** No repository supplied, using repository name $REPOS in vendor archive $REPOSITORY ***"
     else
       REPOS="${REPOS}-${distribution}"
       echo "*** No repository supplied but distribution has been set, using repository name $REPOS ***"
@@ -1149,8 +1195,10 @@ deploy_to_releases() {
 
   # support usage of same source package to build binaries for different distributions
   if [ -n "${ADJUST_DISTRIBUTION_ONTHEFLY:-}" ] ; then
-    echo "*** ADJUST_DISTRIBUTION_ONTHEFLY is set, setting Distribution in changes file as requested to ${distribution} ***"
-    sed -i "s/Distribution: .*/Distribution: ${distribution}/" "${WORKSPACE}/binaries/"*"_${newest_version}"_${architecture}.changes
+    local changes_dist="${distribution}"
+    jdg_vendor_enabled && changes_dist="${DIST_CODENAME}"
+    echo "*** ADJUST_DISTRIBUTION_ONTHEFLY is set, setting Distribution in changes file as requested to ${changes_dist} ***"
+    sed -i "s/Distribution: .*/Distribution: ${changes_dist}/" "${WORKSPACE}/binaries/"*"_${newest_version}"_${architecture}.changes
   fi
 
   if [ -n "${USE_FREIGHT:-}" ] ; then

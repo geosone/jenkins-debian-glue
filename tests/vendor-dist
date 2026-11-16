@@ -1,0 +1,53 @@
+#!/bin/bash
+# Tests for lib/vendor-dist.sh (vendor-qualified distributions).
+set -u
+
+. "$(dirname "$0")/../lib/vendor-dist.sh"
+
+fail=0
+check() { # <description> <expected> <actual>
+  if [ "$2" = "$3" ] ; then
+    echo "ok   - $1"
+  else
+    echo "FAIL - $1: expected [$2], got [$3]"
+    fail=1
+  fi
+}
+
+split() { # prints "vendor codename" or "unqualified"
+  if jdg_vendor_split "$1" ; then
+    echo "${DIST_VENDOR} ${DIST_CODENAME}"
+  else
+    echo "unqualified"
+  fi
+}
+
+check "debian-trixie"          "debian trixie"          "$(split debian-trixie)"
+check "raspbian-bookworm"      "raspbian bookworm"      "$(split raspbian-bookworm)"
+check "ubuntu-noble"           "ubuntu noble"           "$(split ubuntu-noble)"
+check "plain codename"         "unqualified"            "$(split trixie)"
+check "vendor without codename" "unqualified"           "$(split debian-)"
+check "unknown vendor"         "unqualified"            "$(split devuan-excalibur)"
+check "codename with dash"     "debian trixie-backports" "$(split debian-trixie-backports)"
+
+JDG_VENDORS="debian raspbian ubuntu devuan"
+check "extra vendor"           "devuan excalibur"       "$(split devuan-excalibur)"
+JDG_VENDORS="debian raspbian ubuntu"
+
+check "main arch debian"       "amd64"  "$(jdg_vendor_main_arch debian)"
+check "main arch ubuntu"       "amd64"  "$(jdg_vendor_main_arch ubuntu)"
+check "main arch raspbian"     "armhf"  "$(jdg_vendor_main_arch raspbian)"
+MAIN_ARCHITECTURE_ubuntu=arm64
+check "main arch override"     "arm64"  "$(jdg_vendor_main_arch ubuntu)"
+unset MAIN_ARCHITECTURE_ubuntu
+
+check "codename of qualified"  "trixie" "$(jdg_vendor_codename raspbian-trixie)"
+check "codename of plain"      "trixie" "$(jdg_vendor_codename trixie)"
+check "codename keeps others"  "lha-trixie" "$(jdg_vendor_codename lha-trixie)"
+
+VENDOR_DISTRIBUTIONS=true
+jdg_vendor_enabled ; check "enabled"  "0" "$?"
+VENDOR_DISTRIBUTIONS=false
+jdg_vendor_enabled ; check "disabled" "1" "$?"
+
+exit $fail

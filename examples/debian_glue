@@ -118,3 +118,14 @@
 # this.
 # Default: false
 # UNRELEASED_APPEND_COMMIT=false
+
+# Vendor-qualified distributions: the distribution axis is always
+# "<vendor>-<codename>" (debian-trixie, raspbian-trixie, ubuntu-noble) and
+# every vendor gets its own reprepro archive $DEFAULT_REPOSITORY/<vendor>,
+# whose suites use the plain codenames (<package>-trixie, trixie). Needed when
+# vendors share codenames but not architectures (Raspbian's armhf is ARMv6).
+# The primary architecture (builds Arch:all) defaults to amd64, armhf for
+# raspbian; override with MAIN_ARCHITECTURE_<vendor>=<arch>.
+# Default: false
+# VENDOR_DISTRIBUTIONS=true
+# JDG_VENDORS="debian raspbian ubuntu"

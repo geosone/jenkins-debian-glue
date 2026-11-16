@@ -6,6 +6,7 @@ build:
 	tests/merge-conflict
 	tests/increase-version-number
 	tests/file-detection
+	tests/vendor-dist
 
 install: $(scripts)
 	mkdir -p $(DESTDIR)/$(PREFIX)/bin/
@@ -17,6 +18,8 @@ install: $(scripts)
 	install -m 0664 examples/* $(DESTDIR)/usr/share/jenkins-debian-glue/examples/
 	mkdir -p $(DESTDIR)/usr/share/jenkins-debian-glue/pbuilder-hookdir/
 	install -m 0775 pbuilder-hookdir/* $(DESTDIR)/usr/share/jenkins-debian-glue/pbuilder-hookdir/
+	mkdir -p $(DESTDIR)/usr/share/jenkins-debian-glue/lib/
+	install -m 0644 lib/* $(DESTDIR)/usr/share/jenkins-debian-glue/lib/
 
 uninstall: $(scripts)
 	for prog in $(PROGRAMS); do \
