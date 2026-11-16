@@ -1,3 +1,13 @@
+jenkins-debian-glue (0.23.5+dbp1) unstable; urgency=medium
+
+  * Add vendor-qualified distributions (VENDOR_DISTRIBUTIONS): one reprepro
+    archive per vendor, distributions named <vendor>-<codename>.
+  * Do not prune Arch:all packages in repos jobs of non-primary
+    architectures.
+  * Use "." instead of the invalid "_" in snapshot distribution suffixes.
+
+ -- Mario Fetka <mario.fetka@gmail.com>  Mon, 16 Nov 2026 15:47:35 +0100
+
 jenkins-debian-glue (0.23.5) unstable; urgency=medium
 
   * [6fa08b8] jdg-tap-tool-dispatcher: fix file-list handling with
