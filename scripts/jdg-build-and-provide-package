@@ -878,6 +878,11 @@ remove_packages() {
 
   if [ -n "${SKIP_SOURCE_REMOVAL:-}" ] ; then
     echo "*** Skipping removal of existing source package as requested via SKIP_SOURCE_REMOVAL ***"
+  elif ! grep -qs '\.dsc$' "${WORKSPACE}/binaries/"*"_${newest_version}_${arch}.changes" ; then
+    # binary-only changes (the non-primary cells of a matrix) do not bring
+    # the source back, so removing it here would drop the source the
+    # primary architecture's cell has just included
+    echo "*** Skipping removal of existing source package: the changes file does not include it ***"
   else
     echo "*** Removing source package version from repository ***"
     ${SUDO_CMD:-} ${REPREPRO_CMD} -A source -b "${REPOSITORY}" ${REPREPRO_OPTS} remove "${REPOS}" "${SOURCE_PACKAGE}"
