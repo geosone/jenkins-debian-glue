@@ -875,6 +875,16 @@ remove_missing_binary_packages() {
     return 0
   fi
 
+  # Provide-only (repos) jobs never run identify_build_type, so DEBBUILDOPTS
+  # is not "-B" there even for non-primary architectures. Their changes files
+  # lack the Arch:all packages, which would then be "missing" and get removed
+  # again right after the primary architecture published them.
+  if [ -n "${PROVIDE_ONLY:-}" ] && [ -n "${architecture:-}" ] && \
+     [ "${architecture}" != "${MAIN_ARCHITECTURE:-${HOST_ARCH}}" ] ; then
+    echo "*** Skipping removal of missing binaries: ${architecture} is not the primary architecture ${MAIN_ARCHITECTURE:-${HOST_ARCH}} ***"
+    return 0
+  fi
+
   echo "*** Checking for missing binary packages to be considered for removal ***"
 
   # In a binary-only build we don't get any arch-all (*_all.deb) packages and
