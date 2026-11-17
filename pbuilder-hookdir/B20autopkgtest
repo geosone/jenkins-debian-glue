@@ -45,6 +45,13 @@ fi
 # pbuilder's pbuilder-satisfydepends-classic
 apt-get install -y autopkgtest apt-utils pbuilder $newpid_name
 
+# newpid needs clone(CLONE_NEWPID), which some emulated architectures
+# (qemu-user, e.g. armel) reject with EINVAL: run without it there
+if [ -n "${newpid_name:-}" ] && ! newpid true >/dev/null 2>&1 ; then
+  echo "newpid is not usable in this environment, running autopkgtest without it"
+  unset newpid_name
+fi
+
 if [ -x /usr/bin/autopkgtest ]; then
   # starting with autopkgtest 5.0 there's only the dedicated autopkgtest CLI
   AUTOPKG_BINARY=autopkgtest
