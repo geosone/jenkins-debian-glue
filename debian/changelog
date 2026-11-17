@@ -1,3 +1,12 @@
+jenkins-debian-glue (0.23.5+dbp2) unstable; urgency=medium
+
+  * Ship Ubuntu .ddeb debug packages as .deb (reprepro < 5.4 and aptly
+    cannot handle the .ddeb extension).
+  * B20autopkgtest: run without newpid where clone(CLONE_NEWPID) fails,
+    e.g. under qemu-user for armel.
+
+ -- Mario Fetka <mario.fetka@gmail.com>  Tue, 17 Nov 2026 07:56:30 +0100
+
 jenkins-debian-glue (0.23.5+dbp1) unstable; urgency=medium
 
   * Add vendor-qualified distributions (VENDOR_DISTRIBUTIONS): one reprepro
