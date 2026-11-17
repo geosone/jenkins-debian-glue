@@ -33,9 +33,45 @@ if ! [ -r jenkins_debian_glue.pp ] ; then
   exit 1
 fi
 
-if ! type puppet &>/dev/null ; then
+# OpenVox, the community fork of Puppet: from the distribution where it is
+# packaged (Debian >= forky), else from https://apt.voxpupuli.org/ (the
+# openvoxN-release package configures that repository and its key)
+install_openvox() {
+  local id version release major
   apt-get update
-  apt-get -y install puppet || exit 1
+  if apt-cache show openvox-agent >/dev/null 2>&1 ; then
+    apt-get -y install openvox-agent
+    return
+  fi
+
+  . /etc/os-release
+  id="${ID}"
+  case "${id}" in
+    debian) version="${VERSION_ID%%.*}" ;;
+    ubuntu) version="${VERSION_ID}" ;;
+    *) echo "Error: no OpenVox packages for ${ID}, install openvox-agent manually." >&2 ; return 1 ;;
+  esac
+
+  apt-get -y install wget ca-certificates || return 1
+  for major in 9 8 ; do
+    release="openvox${major}-release-${id}${version}.deb"
+    if wget --quiet -O "/tmp/${release}" "https://apt.voxpupuli.org/${release}" ; then
+      dpkg -i "/tmp/${release}" || return 1
+      rm -f "/tmp/${release}"
+      apt-get update
+      apt-get -y install openvox-agent
+      return
+    fi
+  done
+  echo "Error: no OpenVox release package for ${id} ${version} on apt.voxpupuli.org." >&2
+  return 1
+}
+
+# openvox-agent from apt.voxpupuli.org installs to /opt/puppetlabs/bin
+export PATH="${PATH}:/opt/puppetlabs/bin"
+
+if ! type puppet &>/dev/null ; then
+  install_openvox || exit 1
 fi
 
 # Amazon EC2 returns the internal IP by default, so ask about the public one
@@ -52,7 +88,7 @@ fi
 
 # neither using EC2 nor GCE? use a fallback then
 if [ -z "$IP" ] ; then
-  IP=$(ip addr show dev $(route -n | awk '/^0\.0\.0\.0/{print $NF}') | awk '/inet / {print $2}' | head -1 |sed "s;/.*;;")
+  IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')
 fi
 
 if [[ "$(hostname -f 2>/dev/null)" == "" ]] ; then
@@ -64,17 +100,10 @@ $IP $(hostname).example.org $(hostname)
   exit 1
 fi
 
-if dpkg --compare-versions "$(dpkg-query -f "\${Version}\n" -W dpkg 2>/dev/null)" ge '1.17.11' 2>/dev/null ; then
-  package_check() {
-    local package="$1"
-    [ "$(dpkg-query -f "\${db:Status-Status} \${db:Status-Eflag}" -W "$package" 2>/dev/null)" = 'installed ok' ]
-  }
-else # dpkg versions older than 1.17.11 (e.g. Debian/wheezy) don't support db:Status* flags, so fall back then
-  package_check() {
-    local package="$1"
-    dpkg --list "$package" 2>/dev/null | grep -q '^.i'
-  }
-fi
+package_check() {
+  local package="$1"
+  [ "$(dpkg-query -f "\${db:Status-Status} \${db:Status-Eflag}" -W "$package" 2>/dev/null)" = 'installed ok' ]
+}
 
 package_installed() {
   local packages="$*"
@@ -102,24 +131,16 @@ else
 fi
 
 echo "
-NOTE: if you should notice failing Jenkins jobs, this might be related to
-incomplete Jenkins plugin dependencies (see
-https://github.com/jenkinsci/puppet-jenkins/issues/64 +
-https://github.com/jenkinsci/puppet-jenkins/issues/12 for details why we
-can't easily automate that yet).
+Jenkins installs the plugins the jenkins-debian-glue jobs need (git,
+matrix-project, copyartifact, ws-cleanup, junit, tap) on its first start and
+restarts once afterwards, which takes a few minutes.
 
-Take care by following the Jenkins setup wizard, to unlock your Jenkins system
-and also install the suggested plugins within the setup wizard, to do so visit
-http://${IP}:8080
+Then unlock Jenkins with the setup wizard at http://${IP}:8080 (the initial
+admin password is in /var/lib/jenkins/secrets/initialAdminPassword).
 
-IMPORTANT: You also need to manually install the 'Copy Artifact' Jenkins plugin,
-           visit http://${IP}:8080/manage/pluginManager/available
+If building the jenkins-debian-glue* jobs should fail, check the plugins at
+http://${IP}:8080/manage/pluginManager/installed and run this again:
 
-If building the jenkins-debian-glue* Jenkins jobs should still fail,
-ensure that the Jenkins server was restarted ('sudo systemctl restart jenkins'),
-and also rebuild the jenkins-debian-glue* Jenkins jobs after taking care of
-the plugin situation mentioned above, by running:
-
-  sudo puppet apply ./jenkins_debian_glue.pp
+  sudo $(command -v puppet) apply ./jenkins_debian_glue.pp
 
 Enjoy your Jenkins setup."

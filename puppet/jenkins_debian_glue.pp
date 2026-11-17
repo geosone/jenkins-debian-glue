@@ -1,19 +1,7 @@
-define apt::key($ensure = present, $source) {
-  case $ensure {
-    present: {
-      exec { "/usr/bin/wget -O - '${source}' | /usr/bin/apt-key add -":
-        unless  => "apt-key list | grep -Fqe '${name}'",
-        path    => '/bin:/usr/bin',
-        require => Package['wget'],
-      }
-    }
-
-    absent: {
-      exec {"/usr/bin/apt-key del ${name}":
-        onlyif => "apt-key list | grep -Fqe '${name}'",
-      }
-    }
-  }
+# architecture of the matrix jobs: fact jdg_debian_arch, else the system's
+$jdg_arch = $facts['jdg_debian_arch'] ? {
+  undef   => $facts['os']['architecture'],
+  default => $facts['jdg_debian_arch'],
 }
 
 if defined('$ec2_public_ipv4') {
@@ -26,10 +14,6 @@ if defined('$ec2_public_ipv4') {
 
 class jenkins::repos {
 
-  package { 'apt-transport-https':
-    ensure => present,
-  }
-
   package { 'gnupg':
     ensure => present,
   }
@@ -38,26 +22,35 @@ class jenkins::repos {
     ensure => present,
   }
 
-  apt::key { 'EF5975CA':
-    ensure => present,
-    source => 'https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key',
+  # apt-key is gone since Debian trixie: keyring file + signed-by
+  file { '/etc/apt/keyrings':
+    ensure => directory,
+    mode   => '0755',
+  }
+
+  exec { 'jenkins-keyring':
+    command => '/usr/bin/wget -O /etc/apt/keyrings/jenkins-keyring.asc https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key',
+    creates => '/etc/apt/keyrings/jenkins-keyring.asc',
+    require => [
+      File['/etc/apt/keyrings'],
+      Package['wget'],
+    ],
   }
 
   file { '/etc/apt/sources.list.d/jenkins.list':
     ensure  => present,
-    content => "deb https://pkg.jenkins.io/debian-stable binary/\n",
-    require => [
-      Apt::Key['EF5975CA'],
-      Package['apt-transport-https'],
-    ],
+    content => "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/\n",
+    require => Exec['jenkins-keyring'],
   }
 
   exec { 'refresh-apt-jenkins':
-    require => [
+    require     => [
       File['/etc/apt/sources.list.d/jenkins.list'],
-      Apt::Key['EF5975CA'],
+      Exec['jenkins-keyring'],
     ],
-    command => '/usr/bin/apt-get update',
+    subscribe   => File['/etc/apt/sources.list.d/jenkins.list'],
+    refreshonly => true,
+    command     => '/usr/bin/apt-get update',
   }
 }
 
@@ -143,6 +136,58 @@ class jenkins::config {
     mode    => '0755',
     owner   => 'jenkins',
     require => Package['jenkins'],
+  }
+
+  # plugins the jenkins-debian-glue jobs need: installed (with their
+  # dependencies) from the update center when Jenkins starts, followed by one
+  # restart so that the jobs using them load
+  file { '/var/lib/jenkins/init.groovy.d/jdg-plugins.groovy':
+    ensure  => present,
+    mode    => '0644',
+    owner   => 'jenkins',
+    require => File['/var/lib/jenkins/init.groovy.d'],
+    notify  => Service['jenkins'],
+    content => @(GROOVY),
+      // Deployed via jenkins_debian_glue.pp
+      import jenkins.model.Jenkins
+
+      def wanted = ["git", "matrix-project", "copyartifact", "ws-cleanup", "junit", "tap"]
+
+      def jenkins = Jenkins.get()
+      def pm = jenkins.pluginManager
+      def missing = wanted.findAll { pm.getPlugin(it) == null }
+      if (missing.isEmpty()) {
+        return
+      }
+
+      Thread.start {
+        // a new thread runs as anonymous: installing plugins needs SYSTEM
+        def acl = hudson.security.ACL.as2(hudson.security.ACL.SYSTEM2)
+        try {
+          jenkins.updateCenter.updateAllSites()
+          // PluginManager.install resolves the dependencies (like the setup wizard)
+          def ok = true
+          pm.install(missing, false).each { future ->
+            try {
+              def job = future.get()
+              if (job.hasProperty("status") && job.status instanceof hudson.model.UpdateCenter.DownloadJob.Failure) {
+                ok = false
+                println("jdg-plugins: " + job + ": " + job.status.problem)
+              }
+            } catch (Exception e) {
+              ok = false
+              println("jdg-plugins: " + e)
+            }
+          }
+          println("jdg-plugins: installed " + missing.join(" ") + (ok ? ", restarting Jenkins" : " with errors"))
+          if (ok) {
+            jenkins.safeRestart()
+          }
+        } finally {
+          acl.close()
+        }
+      }
+      | GROOVY
   }
 
   file { '/var/lib/jenkins/init.groovy.d/jdg-api-user.groovy':
@@ -370,7 +415,7 @@ class jenkins::config {
     <hudson.matrix.TextAxis>
       <name>architecture</name>
       <values>
-        <string>${::jdg_debian_arch}</string>
+        <string>${jdg_arch}</string>
       </values>
     </hudson.matrix.TextAxis>
   </axes>
@@ -455,7 +500,7 @@ class jenkins::config {
         <hudson.model.StringParameterDefinition>
           <name>architecture</name>
           <description></description>
-          <defaultValue>${::jdg_debian_arch}</defaultValue>
+          <defaultValue>${jdg_arch}</defaultValue>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
