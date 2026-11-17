@@ -66,3 +66,44 @@ jdg_vendor_codename() {
     printf '%s\n' "${1:-}"
   fi
 }
+
+# jdg_vendor_repository <default repository> <distribution>: the reprepro
+# archive of a distribution, <default repository>/<vendor> for a
+# vendor-qualified one, else <default repository>.
+jdg_vendor_repository() {
+  local DIST_VENDOR DIST_CODENAME
+  if jdg_vendor_enabled && jdg_vendor_split "${2:-}" ; then
+    printf '%s/%s\n' "${1%/}" "${DIST_VENDOR}"
+  else
+    printf '%s\n' "${1}"
+  fi
+}
+
+# jdg_vendor_mirror <vendor> <architecture>: default mirror of a vendor
+# (MIRROR_<vendor> overrides it).
+jdg_vendor_mirror() {
+  local var="MIRROR_${1:-}"
+  if [ -n "${!var:-}" ] ; then
+    printf '%s\n' "${!var}"
+    return 0
+  fi
+  case "${1:-}" in
+    ubuntu)
+      case "${2:-}" in
+        amd64|i386) printf 'http://archive.ubuntu.com/ubuntu\n' ;;
+        *)          printf 'http://ports.ubuntu.com/ubuntu-ports\n' ;;
+      esac
+      ;;
+    raspbian) printf 'http://raspbian.raspberrypi.com/raspbian\n' ;;
+    *)        printf 'http://deb.debian.org/debian\n' ;;
+  esac
+}
+
+# jdg_vendor_components <vendor>: archive components for debootstrap.
+jdg_vendor_components() {
+  case "${1:-}" in
+    ubuntu)   printf 'main,universe,restricted,multiverse\n' ;;
+    raspbian) printf 'main,contrib,non-free,rpi\n' ;;
+    *)        printf 'main,contrib,non-free\n' ;;
+  esac
+}

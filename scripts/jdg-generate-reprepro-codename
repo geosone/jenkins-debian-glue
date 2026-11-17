@@ -121,8 +121,10 @@ if [ -z "${DEFAULT_REPOSITORY:-}" ] ; then
 fi
 
 # REPOSITORY can overwrite DEFAULT_REPOSITORY, so define only if unset
+# (with VENDOR_DISTRIBUTIONS the vendor archive of $distribution)
 if [ -z "${REPOSITORY:-}" ] ; then
-  REPOSITORY="${DEFAULT_REPOSITORY}"
+  . "${JDG_LIBDIR:-/usr/share/jenkins-debian-glue/lib}/vendor-dist.sh"
+  REPOSITORY="$(jdg_vendor_repository "${DEFAULT_REPOSITORY}" "${distribution:-}")"
   echo "*** Repository variable REPOSITORY is unset, using default [$REPOSITORY] ***"
 fi
 

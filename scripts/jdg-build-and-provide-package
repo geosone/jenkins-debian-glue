@@ -85,7 +85,7 @@ vendor_distribution_settings() {
 
   # one reprepro archive per vendor
   if ${1:-true} ; then
-    REPOSITORY="${DEFAULT_REPOSITORY}/${DIST_VENDOR}"
+    REPOSITORY="$(jdg_vendor_repository "${DEFAULT_REPOSITORY}" "${distribution}")"
     echo "*** Using vendor archive ${REPOSITORY} ***"
   fi
   # jdg-generate-reprepro-codename runs as a separate process

@@ -50,4 +50,21 @@ jdg_vendor_enabled ; check "enabled"  "0" "$?"
 VENDOR_DISTRIBUTIONS=false
 jdg_vendor_enabled ; check "disabled" "1" "$?"
 
+check "repository, vendor off"   "/srv/repository"        "$(jdg_vendor_repository /srv/repository debian-trixie)"
+VENDOR_DISTRIBUTIONS=true
+check "repository of vendor"     "/srv/repository/ubuntu" "$(jdg_vendor_repository /srv/repository/ ubuntu-noble)"
+check "repository unqualified"   "/srv/repository"        "$(jdg_vendor_repository /srv/repository trixie)"
+check "repository no dist"       "/srv/repository"        "$(jdg_vendor_repository /srv/repository "")"
+VENDOR_DISTRIBUTIONS=false
+
+check "mirror debian"            "http://deb.debian.org/debian"          "$(jdg_vendor_mirror debian amd64)"
+check "mirror ubuntu x86"        "http://archive.ubuntu.com/ubuntu"      "$(jdg_vendor_mirror ubuntu i386)"
+check "mirror ubuntu ports"      "http://ports.ubuntu.com/ubuntu-ports"  "$(jdg_vendor_mirror ubuntu arm64)"
+check "mirror raspbian"          "http://raspbian.raspberrypi.com/raspbian" "$(jdg_vendor_mirror raspbian armhf)"
+MIRROR_debian=http://mirror.example/debian
+check "mirror override"          "http://mirror.example/debian"          "$(jdg_vendor_mirror debian amd64)"
+unset MIRROR_debian
+check "components ubuntu"        "main,universe,restricted,multiverse"   "$(jdg_vendor_components ubuntu)"
+check "components raspbian"      "main,contrib,non-free,rpi"             "$(jdg_vendor_components raspbian)"
+
 exit $fail
