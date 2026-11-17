@@ -848,6 +848,24 @@ EOF
   esac
 
   rm -f "${build_lockfile}"
+
+  ddeb_to_deb
+}
+
+# Ubuntu's debhelper names the -dbgsym packages *.ddeb. They are ordinary
+# .deb archives, but reprepro (< 5.4) and aptly do not know the extension,
+# so ship them as .deb like on Debian (the checksums stay the same).
+ddeb_to_deb() {
+  local f changes
+  for f in "$WORKSPACE"/binaries/*.ddeb ; do
+    [ -e "$f" ] || continue
+    mv "$f" "${f%.ddeb}.deb"
+    for changes in "$WORKSPACE"/binaries/*.changes ; do
+      [ -e "$changes" ] || continue
+      sed -i "s/$(basename "$f" | sed 's/[.]/[.]/g')\$/$(basename "${f%.ddeb}.deb")/" "$changes"
+    done
+    echo "*** Renamed $(basename "$f") to .deb ***"
+  done
 }
 
 # replacement for dcmd, sadly available only in the devscripts package
