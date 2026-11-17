@@ -7,6 +7,7 @@ build:
 	tests/increase-version-number
 	tests/file-detection
 	tests/vendor-dist
+	tests/dist-architectures
 
 install: $(scripts)
 	mkdir -p $(DESTDIR)/$(PREFIX)/bin/

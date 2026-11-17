@@ -37,6 +37,12 @@ if [ "${BUILD_ONLY:-}" = "true" ] ; then
   exit 0
 fi
 
+# architectures of a NEW codename: --architectures, ARCHITECTURES, the
+# DIST_ARCHITECTURES rule of the matrix distribution, else amd64 i386
+. "${JDG_LIBDIR:-/usr/share/jenkins-debian-glue/lib}/dist-architectures.sh"
+if [ -z "${ARCHITECTURES:-}" ] && [ -n "$(jdg_dist_architectures "${distribution:-}")" ] ; then
+  ARCHITECTURES="$(jdg_dist_architectures "${distribution:-}") source"
+fi
 ARCHITECTURES="${ARCHITECTURES:-amd64 i386 source}"
 COMPONENTS="${COMPONENTS:-main}"
 UDEB_COMPONENTS="${UDEB_COMPONENTS:-main}"
@@ -58,6 +64,7 @@ while [ "$#" -gt 1 ]; do
     case "$1" in
       --architectures)
         ARCHITECTURES="$2"
+        architectures_given=true
         shift 2
       ;;
       --components)
@@ -138,6 +145,64 @@ if [ -z "${KEY_ID:-}" ] ; then
   echo "***          and then adjust /etc/jenkins/debian_glue."
 fi
 
+# extend_architectures: an EXISTING codename keeps the architectures it was
+# created with, so a job that later builds another architecture (e.g. after
+# DIST_ARCHITECTURES or the matrix axis gained one) could not include its
+# packages. With EXTEND_CODENAME_ARCHITECTURES=true add the architecture of
+# this matrix build (and those of --architectures, if given) to it, export
+# the new indices and copy the existing Architecture: all packages into them.
+extend_architectures() {
+  local want added
+  want="${architecture:-}"
+  if [ -n "${architectures_given:-}" ] ; then
+    want="${want} ${ARCHITECTURES}"
+  fi
+  [ -n "${want// /}" ] || return 0
+
+  added=$(awk -v codename="${REPOS}" -v want="${want} source" \
+              -v tmp="${REPOSITORY}/conf/distributions.jdg-tmp" '
+    function flush(   i, n, a, have, out, add) {
+      if (!hit || archline == 0) { for (i = 1; i <= nl; i++) print lines[i] > tmp; nl = 0; return }
+      n = split(lines[archline], a, /[ \t]+/)
+      for (i = 2; i <= n; i++) have[a[i]] = 1
+      out = ""
+      for (i = 2; i <= n; i++) if (a[i] != "source") out = out " " a[i]
+      n = split(want, w, /[ \t]+/)
+      for (i = 1; i <= n; i++) if (w[i] != "" && w[i] != "all" && !(w[i] in have)) {
+        have[w[i]] = 1
+        add = add " " w[i]
+        if (w[i] != "source") out = out " " w[i]
+      }
+      if ("source" in have) out = out " source"
+      lines[archline] = "Architectures:" out
+      for (i = 1; i <= nl; i++) print lines[i] > tmp
+      nl = 0
+      added = add
+    }
+    /^[ \t]*$/ { flush(); hit = 0; archline = 0; print "" > tmp; next }
+    { lines[++nl] = $0 }
+    $1 == "Codename:" && $2 == codename { hit = 1 }
+    $1 == "Architectures:" { archline = nl }
+    END { flush(); print added }
+  ' "${REPOSITORY}/conf/distributions")
+
+  if [ -z "${added// /}" ] ; then
+    rm -f "${REPOSITORY}/conf/distributions.jdg-tmp"
+    return 0
+  fi
+
+  cat "${REPOSITORY}/conf/distributions.jdg-tmp" > "${REPOSITORY}/conf/distributions"
+  rm -f "${REPOSITORY}/conf/distributions.jdg-tmp"
+  echo "*** Added architecture(s)${added} to existing codename ${REPOS} ***"
+
+  ${REPREPRO_CMD:-reprepro} -b "${REPOSITORY}" ${REPREPRO_OPTS:-} export "${REPOS}"
+  local a
+  for a in ${added} ; do
+    [ "$a" = source ] && continue
+    ${REPREPRO_CMD:-reprepro} -b "${REPOSITORY}" ${REPREPRO_OPTS:-} flood "${REPOS}" "$a"
+  done
+}
+
 # lock access to file to avoid duplicate entries when two jdg-generate-reprepro-codename
 # runs happen at the very same time
 (
@@ -145,6 +210,9 @@ flock --timeout 5 9 || bailout 1 "Error: could not lock file ${REPOSITORY}/conf/
 
 if grep -q "^\(Codename\|Suite\): ${REPOS}$" "${REPOSITORY}"/conf/distributions ; then
   echo "Codename/repository $REPOS exists already, ignoring request to add again."
+  if [ "${EXTEND_CODENAME_ARCHITECTURES:-}" = "true" ] ; then
+    extend_architectures
+  fi
   exit 0
 fi
 

@@ -1,0 +1,36 @@
+#!/bin/bash
+# Tests for lib/dist-architectures.sh (architectures per distribution).
+set -u
+
+. "$(dirname "$0")/../lib/dist-architectures.sh"
+
+fail=0
+check() { # <description> <expected> <actual>
+  if [ "$2" = "$3" ] ; then
+    echo "ok   - $1"
+  else
+    echo "FAIL - $1: expected [$2], got [$3]"
+    fail=1
+  fi
+}
+
+unset DIST_ARCHITECTURES
+check "unset table"            ""                             "$(jdg_dist_architectures debian-trixie)"
+
+DIST_ARCHITECTURES='
+# comment: line : ignored
+raspbian-*                       : armhf
+ubuntu-*                         : amd64 arm64 armhf
+debian-buster debian-bullseye    : amd64 i386
+debian-*                         : amd64 i386 armhf arm64 armel
+'
+check "first matching rule"    "amd64 i386"                   "$(jdg_dist_architectures debian-bullseye)"
+check "second pattern of line" "amd64 i386"                   "$(jdg_dist_architectures debian-buster)"
+check "wildcard rule"          "amd64 i386 armhf arm64 armel" "$(jdg_dist_architectures debian-trixie)"
+check "other vendor"           "armhf"                        "$(jdg_dist_architectures raspbian-trixie)"
+check "ubuntu"                 "amd64 arm64 armhf"            "$(jdg_dist_architectures ubuntu-noble)"
+check "no matching rule"       ""                             "$(jdg_dist_architectures devuan-excalibur)"
+check "empty distribution"     ""                             "$(jdg_dist_architectures "")"
+check "pattern not globbed against files" "armhf" "$(cd / && jdg_dist_architectures raspbian-bookworm)"
+
+exit $fail
