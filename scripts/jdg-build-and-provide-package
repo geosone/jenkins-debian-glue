@@ -1033,6 +1033,9 @@ reprepro_wrapper() {
   elif ! ${SUDO_CMD:-} grep -q "^\(Codename\|Suite\): ${REPOS}$" "${REPOSITORY}"/conf/distributions ; then
     echo "*** Codename ${REPOS} does not exist in repository ${REPOSITORY}, generating now ***"
     ${SUDO_CMD:-} jdg-generate-reprepro-codename "${REPOS}"
+  elif [ "${EXTEND_CODENAME_ARCHITECTURES:-}" = "true" ] ; then
+    # adds the architecture of this build to the existing codename if needed
+    ${SUDO_CMD:-} jdg-generate-reprepro-codename "${REPOS}"
   fi
 
   remove_packages

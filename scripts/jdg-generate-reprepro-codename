@@ -218,6 +218,22 @@ if grep -q "^\(Codename\|Suite\): ${REPOS}$" "${REPOSITORY}"/conf/distributions 
   exit 0
 fi
 
+# the matrix build creating the codename is about to include its packages:
+# make sure its own architecture is part of it, whatever ARCHITECTURES says
+case " ${ARCHITECTURES} " in
+  *" ${architecture:-all} "*|*" all "*) ;;
+  *)
+    if [ -n "${architecture:-}" ] && [ "${architecture}" != "all" ] ; then
+      echo "*** Adding architecture ${architecture} of this build to ARCHITECTURES (${ARCHITECTURES}) ***"
+      case " ${ARCHITECTURES} " in
+        *" source "*) ARCHITECTURES="$(echo ${ARCHITECTURES/source/}) ${architecture} source" ;;
+        *)            ARCHITECTURES="${ARCHITECTURES} ${architecture}" ;;
+      esac
+      ARCHITECTURES="${ARCHITECTURES# }"
+    fi
+    ;;
+esac
+
 cat >> "${REPOSITORY}"/conf/distributions << EOF
 
 Codename: ${REPOS}
