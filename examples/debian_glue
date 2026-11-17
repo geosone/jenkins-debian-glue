@@ -151,10 +151,31 @@
 # EXTEND_CODENAME_ARCHITECTURES=true
 
 # jdg-set-combination-filter (called from the source jobs) changes the
-# combination filter of the -binaries/-repos jobs through the Jenkins API. With
+# combination filter of the -binaries/-repos/-piuparts jobs through the Jenkins API. With
 # security enabled it needs "user:apitoken" of a user with Job/Read and
 # Job/Configure in this file (readable by the jenkins user only); the puppet
 # manifest creates the user jdg-api and the file
 # $JENKINS_HOME/jdg-api-token.
 # Default: /etc/jenkins/jdg-api-token, then $JENKINS_HOME/jdg-api-token
 # JDG_API_TOKEN_FILE=/etc/jenkins/jdg-api-token
+
+# jdg-piuparts-wrapper (the *-piuparts jobs) reads this file too; note that
+# sudo only passes the variables listed in env_keep of /etc/sudoers.d/jenkins.
+#
+# Run piuparts in the cowbuilder base the package was built in
+# (/var/cache/pbuilder/base-<distribution>-<architecture>.cow, or
+# COWBUILDER_BASE) instead of a debootstrapped base.tgz: same mirrors, keys
+# and extra repositories (e.g. the one providing the dependencies), its
+# sources.list is kept. The base is copied, not modified.
+# Default: unset (debootstrap base-<distribution>-<architecture>.tgz)
+# PIUPARTS_COWBUILDER_BASE=true
+#
+# Directory for the piuparts chroots; on the file system of the cowbuilder
+# bases this makes copying them cheap.
+# Default: unset (piuparts' default, /tmp)
+# PIUPARTS_TMPDIR=/var/cache/pbuilder/build
+#
+# Additional piuparts options, e.g. an extra --scriptsdir with local
+# custom scripts (scripts of later directories replace same-named ones).
+# Default: unset
+# PIUPARTS_OPTIONS="--scriptsdir /etc/jenkins/piuparts-scripts"

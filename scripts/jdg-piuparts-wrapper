@@ -11,6 +11,14 @@ if [ "$#" -lt 1 ] ; then
   exit 1
 fi
 
+if [ -r /etc/jenkins/debian_glue ] ; then
+  . /etc/jenkins/debian_glue
+fi
+
+# vendor-qualified distributions (VENDOR_DISTRIBUTIONS=true, see
+# lib/vendor-dist.sh): piuparts wants the plain codename
+. "${JDG_LIBDIR:-/usr/share/jenkins-debian-glue/lib}/vendor-dist.sh"
+
 if [ -z "${distribution:-}" ] ; then
   # default to the currently running distribution to avoid hardcoding
   # a distribution which might not be supported by the running system
@@ -22,6 +30,14 @@ fi
 if [ -z "${architecture:-}" ] ; then
   architecture=$(dpkg --print-architecture)
   echo "*** architecture variable is unset, using system architecture [$architecture] ***"
+fi
+
+piuparts_distribution="${distribution}"
+piuparts_vendor=""
+if jdg_vendor_enabled && jdg_vendor_split "${distribution}" ; then
+  piuparts_distribution="${DIST_CODENAME}"
+  piuparts_vendor="${DIST_VENDOR}"
+  echo "*** Vendor-qualified distribution ${distribution}: running piuparts for ${piuparts_distribution} (${piuparts_vendor}) ***"
 fi
 
 if [ -n "${SCRIPTSDIR:-}" ] ; then
@@ -38,6 +54,12 @@ else
   fi
 fi
 
+# scripts shipped with jenkins-debian-glue (e.g. make useradd available for
+# post_setup_dummy_users); piuparts runs the scripts of all directories
+# sorted by name
+jdg_scriptsdir="${JDG_PIUPARTS_SCRIPTSDIR:-/usr/share/jenkins-debian-glue/piuparts-scripts}"
+[ -d "${jdg_scriptsdir}" ] || jdg_scriptsdir=""
+
 if [ -n "${PIUPARTS_TMPDIR:-}" ] ; then
   echo "*** PIUPARTS_TMPDIR is set to $PIUPARTS_TMPDIR - using for piuparts run ***"
   piuparts_tmpdir="$PIUPARTS_TMPDIR"
@@ -48,6 +70,9 @@ create_base_tgz() {
 
   if [ -n "${MIRROR:-}" ] ; then
     echo "*** MIRROR variable is set [$MIRROR], using it ***"
+  elif [ -n "${piuparts_vendor}" ] ; then
+    MIRROR="$(jdg_vendor_mirror "${piuparts_vendor}" "${architecture}")"
+    echo "*** Using mirror $MIRROR of vendor ${piuparts_vendor} ***"
   else
     if lsb_release --id 2>/dev/null | grep -q Ubuntu ; then
       MIRROR='http://archive.ubuntu.com/ubuntu'
@@ -60,6 +85,9 @@ create_base_tgz() {
   if [ -n "${COMPONENTS:-}" ] ; then
     echo "*** COMPONENTS is set [$COMPONENTS], using for debootstrapping ***"
     components="$COMPONENTS"
+  elif [ -n "${piuparts_vendor}" ] ; then
+    components="$(jdg_vendor_components "${piuparts_vendor}")"
+    echo "*** Using components $components of vendor ${piuparts_vendor} ***"
   elif lsb_release --id 2>/dev/null | grep -q Ubuntu ; then
     components='main,universe,restricted,multiverse'
     echo "*** Ubuntu detected, using components $components ***"
@@ -79,7 +107,7 @@ create_base_tgz() {
               --components="$components" \
               --arch="$architecture" \
               ${DEBOOTSTRAP_OPTIONS:-} \
-              "$distribution" \
+              "$piuparts_distribution" \
               "$tmpdir" \
               "$MIRROR"
 
@@ -90,7 +118,22 @@ create_base_tgz() {
   )
 }
 
+# PIUPARTS_COWBUILDER_BASE=true: start from the cowbuilder base the package
+# was built in (same distribution, mirrors, keys and extra repositories,
+# e.g. the repository with the build dependencies) instead of a fresh
+# debootstrap; its sources.list is kept
+if [ "${PIUPARTS_COWBUILDER_BASE:-}" = "true" ] ; then
+  existing_chroot="${COWBUILDER_BASE:-/var/cache/pbuilder/base-${distribution}-${architecture}.cow}"
+  if ! [ -d "${existing_chroot}" ] ; then
+    echo "Error: cowbuilder base ${existing_chroot} does not exist." >&2
+    exit 1
+  fi
+  echo "*** Using cowbuilder base ${existing_chroot} as initial chroot ***"
+  SKIP_BASE_TGZ=true
+fi
+
 if [ -n "${SKIP_BASE_TGZ:-}" ] ; then
+  [ -n "${existing_chroot:-}" ] || \
   echo "*** SKIP_BASE_TGZ is set, not using building/using /var/cache/pbuilder/base-${distribution}-${architecture}.tgz ***"
 else
   create_base_tgz
@@ -115,13 +158,25 @@ if dpkg --compare-versions $piuparts_version lt 0.43 ; then
   echo "*************************************************************************"
 fi
 
+# an existing chroot brings its own sources.list
+if [ -n "${MIRROR:-}" ] && [ -z "${existing_chroot:-}" ] ; then
+  mirror_option="--mirror=${MIRROR}"
+fi
+
+if [ -n "${PIUPARTS_OPTIONS:-}" ] ; then
+  echo "*** Using additional piuparts options: ${PIUPARTS_OPTIONS} ***"
+fi
+
 piuparts \
-  -d "${distribution}" \
+  -d "${piuparts_distribution}" \
   ${warn_on_leftovers_after_purge_option:-} \
   ${skip_logrotatefiles_test_option:-} \
   --log-file='piuparts.txt' \
   ${scriptsdir:+--scriptsdir "$scriptsdir"} \
+  ${jdg_scriptsdir:+--scriptsdir "$jdg_scriptsdir"} \
   ${piuparts_tmpdir:+--tmpdir="$piuparts_tmpdir"} \
-  ${MIRROR:+--mirror="$MIRROR"} \
+  ${mirror_option:-} \
   ${basetgz:-} \
+  ${existing_chroot:+--existing-chroot="$existing_chroot" --keep-sources-list} \
+  ${PIUPARTS_OPTIONS:-} \
   "$@"

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Shipped by jenkins-debian-glue, used by jdg-piuparts-wrapper.
+#
+# piuparts' post_setup_dummy_users needs useradd, but build chroots do not
+# always have it (debootstrap --variant=buildd no longer installs passwd
+# since Debian trixie), so install passwd first if it is missing.
+set -e
+
+if ! command -v useradd >/dev/null 2>&1 ; then
+  echo "jenkins-debian-glue: useradd missing, installing passwd"
+  DEBIAN_FRONTEND=noninteractive apt-get -y -q install passwd
+fi

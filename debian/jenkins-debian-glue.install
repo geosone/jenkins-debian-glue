@@ -20,3 +20,4 @@ usr/bin/jdg-tap-tool-dispatcher usr/bin/
 usr/share/jenkins-debian-glue/examples/debian_glue etc/jenkins/
 usr/share/jenkins-debian-glue/pbuilder-hookdir/ usr/share/jenkins-debian-glue/
 usr/share/jenkins-debian-glue/lib/ usr/share/jenkins-debian-glue/
+usr/share/jenkins-debian-glue/piuparts-scripts/ usr/share/jenkins-debian-glue/

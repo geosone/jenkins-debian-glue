@@ -21,6 +21,8 @@ install: $(scripts)
 	install -m 0775 pbuilder-hookdir/* $(DESTDIR)/usr/share/jenkins-debian-glue/pbuilder-hookdir/
 	mkdir -p $(DESTDIR)/usr/share/jenkins-debian-glue/lib/
 	install -m 0644 lib/* $(DESTDIR)/usr/share/jenkins-debian-glue/lib/
+	mkdir -p $(DESTDIR)/usr/share/jenkins-debian-glue/piuparts-scripts/
+	install -m 0755 piuparts-scripts/* $(DESTDIR)/usr/share/jenkins-debian-glue/piuparts-scripts/
 
 uninstall: $(scripts)
 	for prog in $(PROGRAMS); do \

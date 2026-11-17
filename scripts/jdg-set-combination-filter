@@ -3,7 +3,8 @@
                            [--job <job> ...] [--apply]
 
 Set the combination filter of the matrix jobs of a package (by default
-<name>-binaries and <name>-repos) so that only buildable cells exist:
+<name>-binaries, <name>-repos and <name>-piuparts, if they exist) so that
+only buildable cells exist:
 
   * DIST_ARCHITECTURES (see /etc/jenkins/debian_glue): the architectures a
     distribution can build at all
@@ -210,14 +211,14 @@ def main():
     ap.add_argument("--package", required=True, help="package (job prefix)")
     ap.add_argument("--control", help="debian/control of the package")
     ap.add_argument("--job", action="append",
-                    help="matrix job to update (repeatable; default <package>-binaries and <package>-repos)")
+                    help="matrix job to update (repeatable; default <package>-binaries, -repos and -piuparts)")
     ap.add_argument("--apply", action="store_true", help="write the filter (default: only show it)")
     args = ap.parse_args()
 
     jenkins = Jenkins()
     wild = control_archs(args.control)
     rc = 0
-    for job in args.job or (args.package + "-binaries", args.package + "-repos"):
+    for job in args.job or ("%s-%s" % (args.package, kind) for kind in ("binaries", "repos", "piuparts")):
         try:
             xml = jenkins.config(job)
         except (urllib.error.URLError, OSError) as e:

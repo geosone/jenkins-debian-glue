@@ -1,0 +1,17 @@
+#!/bin/sh
+# Shipped by jenkins-debian-glue, used by jdg-piuparts-wrapper.
+#
+# piuparts reports every broken symlink of the chroot in each of its checks.
+# Build chroots often bring some (/etc/localtime without tzdata since Debian
+# trixie's buildd variant, locale links of Ubuntu's coreutils), which would
+# show up as failures of every package tested. Remove the dangling symlinks
+# of the base chroot before the package is installed, so that only the ones
+# a package creates are reported.
+set -e
+
+find / -xdev \( -path /proc -o -path /sys -o -path /dev -o -path /tmp \) -prune -o \
+     -type l ! -exec test -e {} \; -print 2>/dev/null |
+while IFS= read -r link ; do
+  echo "jenkins-debian-glue: removing dangling symlink $link -> $(readlink "$link")"
+  rm -f "$link"
+done
