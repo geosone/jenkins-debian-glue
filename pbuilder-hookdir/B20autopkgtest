@@ -43,7 +43,13 @@ fi
 
 # autopkgtest uses apt-utils's apt-ftparchive and
 # pbuilder's pbuilder-satisfydepends-classic
-apt-get install -y autopkgtest apt-utils pbuilder $newpid_name
+# pbuilder's postinst cannot always infer a mirror in a minimal chroot
+# (e.g. Debian bookworm) and then fails: preseed the chroot's first mirror
+mirror="$(sed -n 's#^deb \(\[[^]]*\] \)\?\(https\?://[^ ]*\) .*#\2#p' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null | head -1)"
+if [ -n "${mirror}" ] && command -v debconf-set-selections >/dev/null 2>&1 ; then
+  echo "pbuilder pbuilder/mirrorsite string ${mirror}" | debconf-set-selections
+fi
+DEBIAN_FRONTEND=noninteractive apt-get install -y autopkgtest apt-utils pbuilder $newpid_name
 
 # newpid needs clone(CLONE_NEWPID), which some emulated architectures
 # (qemu-user, e.g. armel) reject with EINVAL: run without it there
