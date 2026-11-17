@@ -8,6 +8,7 @@ usr/bin/jdg-lintian-junit-report usr/bin/
 usr/bin/jdg-piuparts-wrapper usr/bin/
 usr/bin/jdg-remove-reprepro-codename usr/bin/
 usr/bin/jdg-repository-checker usr/bin/
+usr/bin/jdg-set-combination-filter usr/bin/
 usr/bin/jdg-tap-adtsummary usr/bin/
 usr/bin/jdg-tap-checkbashism usr/bin/
 usr/bin/jdg-tap-merge-conflict usr/bin
