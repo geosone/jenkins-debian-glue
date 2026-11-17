@@ -129,3 +129,32 @@
 # Default: false
 # VENDOR_DISTRIBUTIONS=true
 # JDG_VENDORS="debian raspbian ubuntu"
+
+# Architectures a distribution can build at all, one rule per line:
+# "<shell patterns> : <architectures>", the first matching line wins.
+# jdg-generate-reprepro-codename uses it for the Architectures of a new
+# codename (unless ARCHITECTURES or --architectures is given) and
+# jdg-set-combination-filter for the cells of the matrix jobs.
+# Default: unset (codenames get ARCHITECTURES, all matrix cells are kept)
+# DIST_ARCHITECTURES='
+# raspbian-*                       : armhf
+# ubuntu-*                         : amd64 arm64 armhf
+# debian-buster debian-bullseye    : amd64 i386
+# debian-*                         : amd64 i386 armhf arm64 armel
+# '
+
+# A reprepro codename keeps the architectures it was created with. Set this
+# to 'true' so that jdg-generate-reprepro-codename adds the architecture of
+# the current matrix build to an existing codename (and floods the
+# Architecture: all packages into it) instead of failing the include later.
+# Default: false
+# EXTEND_CODENAME_ARCHITECTURES=true
+
+# jdg-set-combination-filter (called from the source jobs) changes the
+# combination filter of the -binaries/-repos jobs through the Jenkins API. With
+# security enabled it needs "user:apitoken" of a user with Job/Read and
+# Job/Configure in this file (readable by the jenkins user only); the puppet
+# manifest creates the user jdg-api and the file
+# $JENKINS_HOME/jdg-api-token.
+# Default: /etc/jenkins/jdg-api-token, then $JENKINS_HOME/jdg-api-token
+# JDG_API_TOKEN_FILE=/etc/jenkins/jdg-api-token

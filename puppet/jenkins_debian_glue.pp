@@ -134,6 +134,78 @@ class jenkins::config {
     require => Package['jenkins'],
   }
 
+  # API user for jdg-set-combination-filter (the source jobs set the
+  # combination filter of the -binaries/-repos jobs through the API): with
+  # Jenkins' own user database create the user jdg-api once and store
+  # "jdg-api:<token>" in $JENKINS_HOME/jdg-api-token (mode 0600)
+  file { '/var/lib/jenkins/init.groovy.d':
+    ensure  => directory,
+    mode    => '0755',
+    owner   => 'jenkins',
+    require => Package['jenkins'],
+  }
+
+  file { '/var/lib/jenkins/init.groovy.d/jdg-api-user.groovy':
+    ensure  => present,
+    mode    => '0644',
+    owner   => 'jenkins',
+    require => File['/var/lib/jenkins/init.groovy.d'],
+    notify  => Service['jenkins'],
+    content => @(GROOVY),
+      // Deployed via jenkins_debian_glue.pp
+      import java.nio.file.Files
+      import java.nio.file.attribute.PosixFilePermissions
+      import hudson.model.Item
+      import hudson.model.User
+      import hudson.security.HudsonPrivateSecurityRealm
+      import jenkins.model.Jenkins
+      import jenkins.security.ApiTokenProperty
+
+      def jenkins = Jenkins.get()
+      def tokenFile = new File(jenkins.rootDir, "jdg-api-token")
+      def name = "jdg-api"
+
+      if (tokenFile.exists()) {
+        return
+      }
+      def realm = jenkins.securityRealm
+      if (!(realm instanceof HudsonPrivateSecurityRealm)) {
+        println("jdg-api: no Jenkins user database; for jdg-set-combination-filter put "
+                + "user:apitoken of a user with Job/Read and Job/Configure into " + tokenFile)
+        return
+      }
+
+      def user = User.getById(name, false)
+      if (user == null) {
+        user = realm.createAccount(name, UUID.randomUUID().toString() + UUID.randomUUID().toString())
+        user.setFullName("jenkins-debian-glue API")
+      }
+      def prop = user.getProperty(ApiTokenProperty.class)
+      if (prop == null) {
+        prop = new ApiTokenProperty()
+        user.addProperty(prop)
+      }
+      def token = prop.tokenStore.generateNewToken("jdg-set-combination-filter")
+      user.save()
+
+      // matrix-based security: allow reading and configuring jobs
+      def strategy = jenkins.authorizationStrategy
+      if (strategy.getClass().name.endsWith("MatrixAuthorizationStrategy")) {
+        try {
+          [Jenkins.READ, Item.READ, Item.CONFIGURE].each { strategy.add(it, name) }
+          jenkins.save()
+        } catch (Exception e) {
+          println("jdg-api: grant " + name + " Overall/Read, Job/Read and Job/Configure: " + e)
+        }
+      }
+
+      Files.createFile(tokenFile.toPath(),
+                       PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
+      tokenFile.text = name + ":" + token.plainValue + "\n"
+      println("jdg-api: API token written to " + tokenFile)
+      | GROOVY
+  }
+
   file { '/var/lib/jenkins/jobs':
     ensure  => directory,
     mode    => '0755',
@@ -212,6 +284,12 @@ class jenkins::config {
 
 # when using subversion:
 # /usr/bin/jdg-generate-svn-snapshot</command>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command># keep the combination filter of the -binaries/-repos matrix jobs in
+# line with debian/control and DIST_ARCHITECTURES (/etc/jenkins/debian_glue)
+/usr/bin/jdg-set-combination-filter --apply --package jenkins-debian-glue \\
+    --control source/debian/control || echo &quot;*** WARNING: combination filter not updated ***&quot;</command>
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
       <command>mkdir -p report
