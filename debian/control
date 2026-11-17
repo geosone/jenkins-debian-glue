@@ -18,6 +18,7 @@ Depends:
  ${misc:Depends},
 Recommends:
  jenkins-debian-glue-buildenv,
+ python3,
 Conflicts:
  jenkins-debian-glue-buildenv-git,
  jenkins-debian-glue-buildenv-lintian,

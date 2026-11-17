@@ -1,0 +1,270 @@
+#!/usr/bin/python3
+"""jdg-set-combination-filter --package <name> [--control <debian/control>]
+                           [--job <job> ...] [--apply]
+
+Set the combination filter of the matrix jobs of a package (by default
+<name>-binaries and <name>-repos) so that only buildable cells exist:
+
+  * DIST_ARCHITECTURES (see /etc/jenkins/debian_glue): the architectures a
+    distribution can build at all
+  * the Architecture fields of the binary packages in debian/control
+    (matched with dpkg-architecture -i, so any, linux-any, any-amd64 etc.
+    work); a package that is only "Architecture: all" gets just the primary
+    architecture (MAIN_ARCHITECTURE, per vendor with VENDOR_DISTRIBUTIONS)
+
+Meant to be called by the <name>-source job right after
+jdg-generate-git-snapshot, so every package keeps its own filter current:
+
+  /usr/bin/jdg-set-combination-filter --apply --package "${JOB_NAME%-source}" \\
+      --control source/debian/control
+
+Without --control only DIST_ARCHITECTURES is used. Without --apply it only
+prints the filter and the cells that would appear (+) or disappear (-).
+
+The jobs are read and written through the Jenkins API:
+  JENKINS_URL         set by Jenkins in every build
+                      (default http://localhost:8080/)
+  JDG_API_TOKEN_FILE  "user:apitoken" of a user with Job/Read and
+                      Job/Configure, from the environment or the
+                      configuration (default /etc/jenkins/jdg-api-token,
+                      else $JENKINS_HOME/jdg-api-token); without it the API
+                      is used anonymously
+  DEBIAN_GLUE         configuration (default /etc/jenkins/debian_glue)
+  JDG_LIBDIR          default /usr/share/jenkins-debian-glue/lib
+"""
+import argparse
+import base64
+import html
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+CONF = os.environ.get("DEBIAN_GLUE", "/etc/jenkins/debian_glue")
+LIBDIR = os.environ.get("JDG_LIBDIR", "/usr/share/jenkins-debian-glue/lib")
+JENKINS_URL = os.environ.get("JENKINS_URL", "http://localhost:8080/").rstrip("/") + "/"
+
+
+def token_file():
+    path = os.environ.get("JDG_API_TOKEN_FILE") or config_shell('echo "${JDG_API_TOKEN_FILE:-}"').strip()
+    if path:
+        return path
+    for path in ("/etc/jenkins/jdg-api-token",
+                 os.path.join(os.environ.get("JENKINS_HOME", "/var/lib/jenkins"), "jdg-api-token")):
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def config_shell(script, *args):
+    """Run bash with the jdg configuration and libraries loaded."""
+    prog = ('[ -r "$1" ] && . "$1" >/dev/null 2>&1; '
+            '. "$2/vendor-dist.sh"; . "$2/dist-architectures.sh"; ' + script)
+    return subprocess.run(["bash", "-c", prog, "-", CONF, LIBDIR] + list(args),
+                          capture_output=True, text=True).stdout
+
+
+class Jenkins:
+    def __init__(self):
+        self.auth = None
+        self.crumb = None
+        path = token_file()
+        if path:
+            with open(path) as fh:
+                self.auth = "Basic " + base64.b64encode(fh.read().strip().encode()).decode()
+
+    def request(self, path, data=None, ctype=None):
+        req = urllib.request.Request(JENKINS_URL + path, data=data)
+        if self.auth:
+            req.add_header("Authorization", self.auth)
+        if ctype:
+            req.add_header("Content-Type", ctype)
+        if data is not None and self.crumb:
+            req.add_header(*self.crumb)
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.read()
+
+    def job(self, name):
+        return "job/" + urllib.parse.quote(name)
+
+    def config(self, name):
+        try:
+            return self.request(self.job(name) + "/config.xml").decode("utf-8")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            raise
+
+    def cells(self, name):
+        data = json.loads(self.request(self.job(name) + "/api/json?tree=activeConfigurations[name]"))
+        return [dict(kv.split("=", 1) for kv in c["name"].split(","))
+                for c in data.get("activeConfigurations") or []]
+
+    def set_config(self, name, xml):
+        if self.crumb is None and not self.auth:
+            # anonymous POSTs need a CSRF crumb; API tokens do not
+            try:
+                c = json.loads(self.request("crumbIssuer/api/json"))
+                self.crumb = (c["crumbRequestField"], c["crumb"])
+            except urllib.error.HTTPError:
+                self.crumb = ()
+        self.request(self.job(name) + "/config.xml", xml.encode("utf-8"), "application/xml")
+
+
+def control_archs(path):
+    """Architecture wildcards of the binary packages, or None (no info)."""
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        stanzas = re.split(r"\n\s*\n", fh.read())
+    wild = []
+    for st in stanzas:
+        if not re.search(r"^Package:", st, re.M):
+            continue  # source stanza
+        m = re.search(r"^Architecture:[ \t]*(.*)$", st, re.M)
+        if m:
+            wild += m.group(1).split()
+    return wild or None
+
+
+_match_cache = {}
+
+
+def matches(arch, wildcards):
+    for w in wildcards:
+        if w == "all":
+            continue
+        if w in ("any", arch):
+            return True
+        key = (arch, w)
+        if key not in _match_cache:
+            _match_cache[key] = subprocess.run(
+                ["dpkg-architecture", "-a" + arch, "-i" + w],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+        if _match_cache[key]:
+            return True
+    return False
+
+
+_dist_cache = {}
+
+
+def dist_info(dist):
+    """(architectures of DIST_ARCHITECTURES or None, primary architecture)"""
+    if dist not in _dist_cache:
+        out = config_shell(
+            'echo "$(jdg_dist_architectures "$3")"; '
+            'if jdg_vendor_enabled && jdg_vendor_split "$3"; then jdg_vendor_main_arch "$DIST_VENDOR"; '
+            'else echo "${MAIN_ARCHITECTURE:-amd64}"; fi', dist).split("\n")
+        archs = out[0].split() if out and out[0].strip() else None
+        main = out[1].strip() if len(out) > 1 and out[1].strip() else "amd64"
+        _dist_cache[dist] = (archs, main)
+    return _dist_cache[dist]
+
+
+def wanted(dist, arch, wildcards):
+    archs, main = dist_info(dist)
+    if archs is not None and arch not in archs:
+        return False
+    if wildcards is None or matches(arch, wildcards):
+        return True
+    return "all" in wildcards and arch == main
+
+
+def groovy_string(s):
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def xml_escape(s):
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def axis_values(xml, name):
+    m = re.search(r"<name>%s</name>\s*<values>(.*?)</values>" % re.escape(name), xml, re.S)
+    return [html.unescape(v) for v in re.findall(r"<string>([^<]+)</string>", m.group(1))] if m else None
+
+
+def build_filter(archs, dists, wild):
+    if dists is None:  # architecture axis only
+        keep = [a for a in archs if wanted("", a, wild)]
+        cells = {"%s" % a for a in keep}
+        flt = " || ".join("architecture == %s" % groovy_string(a) for a in keep) or "false"
+        return flt, cells
+    parts, cells = [], set()
+    for d in dists:
+        keep = [a for a in archs if wanted(d, a, wild)]
+        cells |= {"%s/%s" % (a, d) for a in keep}
+        if keep:
+            parts.append("(distribution == %s && (%s))" % (
+                groovy_string(d), " || ".join("architecture == %s" % groovy_string(a) for a in keep)))
+    return " || ".join(parts) or "false", cells
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[1],
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--package", required=True, help="package (job prefix)")
+    ap.add_argument("--control", help="debian/control of the package")
+    ap.add_argument("--job", action="append",
+                    help="matrix job to update (repeatable; default <package>-binaries and <package>-repos)")
+    ap.add_argument("--apply", action="store_true", help="write the filter (default: only show it)")
+    args = ap.parse_args()
+
+    jenkins = Jenkins()
+    wild = control_archs(args.control)
+    rc = 0
+    for job in args.job or (args.package + "-binaries", args.package + "-repos"):
+        try:
+            xml = jenkins.config(job)
+        except (urllib.error.URLError, OSError) as e:
+            print("*** WARNING: %s: cannot read the job configuration: %s ***" % (job, e))
+            rc = 1
+            continue
+        if xml is None:
+            continue
+        archs = axis_values(xml, "architecture")
+        if archs is None:
+            print("*** %s: no architecture axis, nothing to do ***" % job)
+            continue
+        flt, want = build_filter(archs, axis_values(xml, "distribution"), wild)
+
+        m = re.search(r"<combinationFilter>(.*?)</combinationFilter>", xml, re.S)
+        if m and html.unescape(m.group(1)) == flt:
+            print("*** %s: combination filter up to date ***" % job)
+            continue
+        have = set()
+        try:
+            for c in jenkins.cells(job):
+                have.add("/".join(v for v in (c.get("architecture"), c.get("distribution")) if v))
+        except (urllib.error.URLError, OSError, ValueError):
+            pass
+        diff = sorted("+" + c for c in want - have) + sorted("-" + c for c in have - want)
+        print("*** %s: combination filter %s%s ***" % (job, "set" if args.apply else "would change",
+                                                       (": " + " ".join(diff)) if diff else ""))
+        print("    " + flt)
+        if not args.apply:
+            continue
+        new = "<combinationFilter>%s</combinationFilter>" % xml_escape(flt)
+        if m:
+            xml2 = xml[:m.start()] + new + xml[m.end():]
+        elif "</axes>" in xml:
+            i = xml.index("</axes>") + len("</axes>")
+            xml2 = xml[:i] + "\n  " + new + xml[i:]
+        else:
+            print("*** WARNING: %s: not a matrix job ***" % job)
+            rc = 1
+            continue
+        try:
+            jenkins.set_config(job, xml2)
+        except (urllib.error.URLError, OSError) as e:
+            print("*** WARNING: %s: could not set the combination filter: %s ***" % (job, e))
+            rc = 1
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())
