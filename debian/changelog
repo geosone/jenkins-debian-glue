@@ -1,3 +1,16 @@
+jenkins-debian-glue (0.23.5+dbp3) unstable; urgency=medium
+
+  * DIST_ARCHITECTURES: architectures per distribution, used for new
+    reprepro codenames.
+  * EXTEND_CODENAME_ARCHITECTURES: add the architecture of a matrix build
+    to an existing codename.
+  * New jdg-set-combination-filter: keep the combination filter of the
+    matrix jobs in line with debian/control and DIST_ARCHITECTURES.
+  * puppet: API user for jdg-set-combination-filter, called from the
+    source job.
+
+ -- Mario Fetka <mario.fetka@gmail.com>  Tue, 17 Nov 2026 08:04:47 +0100
+
 jenkins-debian-glue (0.23.5+dbp2) unstable; urgency=medium
 
   * Ship Ubuntu .ddeb debug packages as .deb (reprepro < 5.4 and aptly
