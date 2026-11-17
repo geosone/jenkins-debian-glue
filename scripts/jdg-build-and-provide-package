@@ -196,6 +196,10 @@ checks_and_defaults() {
     # $BUILDRESULT.
     ADDITIONAL_BUILDRESULTS+=('../*lintian.txt')
   fi
+
+  # results of the B20autopkgtest hook; pbuilder only copies the files of the
+  # .changes and ADDITIONAL_BUILDRESULTS to $BUILDRESULT
+  ADDITIONAL_BUILDRESULTS+=('../autopkgtest.summary' '../autopkgtest.tar.gz')
 }
 
 clean_workspace() {
@@ -361,6 +365,10 @@ cowbuilder_init() {
   if [ "${LINTIAN:-}" = 'true' ] ; then
     echo "ADDITIONAL_BUILDRESULTS+=('../*lintian.txt')" >> "$pbuilderrc"
   fi
+
+  # results of the B20autopkgtest hook (pbuilder only copies the files of the
+  # .changes and ADDITIONAL_BUILDRESULTS), see autopkgtest_results
+  echo "ADDITIONAL_BUILDRESULTS+=('../autopkgtest.summary' '../autopkgtest.tar.gz')" >> "$pbuilderrc"
 
   use_eatmydata
   use_ccache
@@ -796,6 +804,10 @@ EOF
   if [ "${LINTIAN:-}" = 'true' ] ; then
     echo "ADDITIONAL_BUILDRESULTS+=('../*lintian.txt')" >> "$pbuilderrc"
   fi
+
+  # results of the B20autopkgtest hook (pbuilder only copies the files of the
+  # .changes and ADDITIONAL_BUILDRESULTS), see autopkgtest_results
+  echo "ADDITIONAL_BUILDRESULTS+=('../autopkgtest.summary' '../autopkgtest.tar.gz')" >> "$pbuilderrc"
 
   use_eatmydata
   use_ccache

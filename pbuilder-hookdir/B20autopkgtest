@@ -92,7 +92,8 @@ else
     ${ADT_OPTIONS:-} --- adt-virt-null || EXIT=$?
 fi
 
-# collect autopkgtest output in a single file so pbuilder automatically copies it
+# collect autopkgtest output in a single file; jdg-build-and-provide-package
+# adds it and autopkgtest.summary to pbuilder's ADDITIONAL_BUILDRESULTS
 tar acf /tmp/buildd/autopkgtest.tar.gz /tmp/buildd/autopkgtest.out
 
 case ${EXIT:-0} in
