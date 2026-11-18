@@ -7,7 +7,6 @@ end
 
 file = ARGV[0]
 counter = 1
-found_error = 0
 
 begin
 	output = File.open("#{file}", "r").read
@@ -16,28 +15,38 @@ rescue
 	exit 1
 end
 
-num_lines = output.lines.count
+# One line per test: "<name> <RESULT>[ <details>]", e.g.
+#   version              PASS
+#   version              PASS (superficial)
+#   smoke                SKIP Test needs root on testbed which is not available
+#   smoke                FAIL non-zero exit status 1
+#   smoke                FAIL status: 1 (autopkgtest < 2.2.3+nmu1)
+#   smoke                FLAKY non-zero exit status 1
+# Continuation lines ending in ':' are joined with the next one.
+results = []
+output.gsub(/:\n/, ':').each_line do |line|
+	m = /\A(\S+)\s+(PASS|FAIL|SKIP|FLAKY|NEUTRAL)\b\s*(.*?)\s*\z/.match(line)
+	next if m.nil?
+	test, result, details = m[1], m[2], m[3]
+	n = results.length + 1
+	results << case result
+		when "PASS"
+			"ok #{n}           #{test} passed#{details.empty? ? "" : " " + details}"
+		when "SKIP"
+			"ok #{n}           #{test} # SKIP #{details}"
+		when "FLAKY", "NEUTRAL"
+			"ok #{n}           #{test} # TODO #{result.downcase}: #{details}"
+		else
+			status = /non-zero exit status (.*)|status:\s*(.*)/.match(details)
+			status ? "not ok #{n}           #{test} - exit status #{status[1] || status[2]}" :
+			         "not ok #{n}           #{test} #{details}"
+		end
+end
 
-if num_lines == 0
+if results.empty?
   puts "1..0 # Skipped: no autopkgtest output found"
   exit 0
 end
 
-puts "1..#{num_lines}"
-output.gsub(/:\n/, ':').each_line do |critic|
-	if critic =~ /.*PASS.*/
-		cmd = /(.*)? (PASS)$/.match(critic)[1]
-		puts "ok #{counter}           #{cmd} passed"
-		counter += 1
-	elsif critic =~ /.*FAIL.*status.*/ # versions >= 2.2.3+nmu1 of autopkgtest
-		test = /(.*)? (FAIL non-zero exit status )(.*)?/.match(critic)[1]
-		status = /(.*)? (FAIL non-zero exit status )(.*)?/.match(critic)[3]
-		puts "not ok #{counter}           #{test} - exit status #{status}"
-		counter += 1
-	elsif critic =~ /.*FAIL status.*/ # older versions of autopkgtest
-		test = /(.*)? (FAIL status:)(.*)?/.match(critic)[1]
-		cmd = /(.*)? (FAIL status:)(.*)?/.match(critic)[3]
-		puts "not ok #{counter}           #{test} #{cmd}"
-		counter += 1
-	end
-end
+puts "1..#{results.length}"
+results.each { |r| puts r }
