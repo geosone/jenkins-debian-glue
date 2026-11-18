@@ -1,3 +1,10 @@
+jenkins-debian-glue (0.23.5+dbp8) unstable; urgency=medium
+
+  * jdg-tap-adtsummary: handle "PASS (superficial)", SKIP, FLAKY and
+    unknown details instead of crashing.
+
+ -- Mario Fetka <mario.fetka@gmail.com>  Wed, 18 Nov 2026 09:00:00 +0100
+
 jenkins-debian-glue (0.23.5+dbp7) unstable; urgency=medium
 
   * New codenames always include the architecture of the build.
