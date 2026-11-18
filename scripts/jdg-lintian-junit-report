@@ -117,6 +117,10 @@ else
   $output = File.open(lintian_file, 'r').read
 end
 
+# lintian prints UTF-8 (e.g. non-ASCII names in debian/copyright); under a C
+# locale Ruby tags the text US-ASCII and regex matching raises ArgumentError.
+$output = $output.dup.force_encoding('UTF-8').scrub('?')
+
 class JUnitOutput
   require 'rexml/formatters/transitive'
   require 'rexml/document'

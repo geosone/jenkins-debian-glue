@@ -1,3 +1,10 @@
+jenkins-debian-glue (0.23.5+dbp9) unstable; urgency=medium
+
+  * jdg-lintian-junit-report: read lintian output as UTF-8 instead of
+    crashing on non-ASCII text under a C locale.
+
+ -- Mario Fetka <mario.fetka@gmail.com>  Wed, 18 Nov 2026 16:30:00 +0100
+
 jenkins-debian-glue (0.23.5+dbp8) unstable; urgency=medium
 
   * jdg-tap-adtsummary: handle "PASS (superficial)", SKIP, FLAKY and
